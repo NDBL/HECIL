@@ -31,13 +31,6 @@ os.system(cmd_align)
 
 
 
-#cutoff_quickcorrect=0.85
-#SR_readlength=202
-#num_LRread=33360
-#max_qualscore=60
-#conf_threshold=1.2
-
-
 
 
 
