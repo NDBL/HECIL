@@ -2,7 +2,7 @@
 #!/bin/bash
 
 # Align short and long reads
-echo 'Alignment started'
+echo 'Started running alignment'
 ./bwa index $1 2>stdout.txt
 ./bwa mem -t 12 $1 $2 > Out.sam 2>stdout.txt
 
@@ -18,7 +18,7 @@ rm $1.ann
 rm $1.amb
 rm Out.sort.bam
 
-echo 'Alignment finished'
+echo -e 'Finished running alignment\n'
 
 #----------------------------------------------
 
@@ -32,21 +32,20 @@ num_ref=$(($num_refline / $d))
 #'./Align.sh '+LR+' '+SR+' '+len_SR+' '+out+' '+lc+' '+c+' '+k
 #$1=LR, $2=SR, $3=len_SR, $4=Output, $5=Uncorr (LowConf Corr), $6=cutoff_QC, $7=conf_threshold
 
+echo 'Started running correction'
+python Correction.py Pileup.txt $1 $5 $num_ref $3 $6 $7 > $4
 
-echo 'Correction started'
-#cmd="python Correction.py Pileup.txt $1 $5 $num_ref $3 > $4"
-#echo $cmd
-python Correction.py Pileup.txt $1 $5 $num_ref $3 > $4
+echo -e 'Finished running correction\n'
 
-echo 'Correction finished'
-
-num_correfline="$(wc -l "Out" | awk '{print $1}')"
+num_correfline="$(wc -l "$4" | awk '{print $1}')"
 num_corref=$(($num_correfline / $d))
 
-echo 'Generating output file with all (corrected and uncorrected) reads'
+echo -e 'Generating output file with all (corrected and uncorrected) reads\n'
 
-python Create_Corrected_AllLRReads.py $1 $num_ref Out $num_corref
+python Create_Corrected_AllLRReads.py $1 $num_ref $4 $num_corref
 
-echo "Finished Running HECIL"
+rm $1.fai
+rm Out.sam
 
+echo -e "Finished running HECIL\n"
 

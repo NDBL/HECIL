@@ -2,7 +2,7 @@
 ########################################################
 #Author: Olivia Choudhury
 #Last modified: 06/09/2017
-#version 6_8: keep ref_base for low-confidence correction + check value of J1 (not J2-J1) for confidence threshold
+#version 6.8
 ########################################################
 
 import os, fileinput, re, sys
@@ -16,27 +16,25 @@ def median(lst):
 pileupiter=sys.argv[3]
 f_pileupiter=open(pileupiter,'w')
 
-# Quick Correction when >90% SRs vote for one allele
+# Quick Correction 
 f_pileup=sys.argv[1]
 l_pileup=open(f_pileup).readlines()
 ref_file=sys.argv[2]
 
-cutoff_quickcorrect=0.85
+cutoff_quickcorrect=float(sys.argv[6])
 SR_readlength=sys.argv[5]
-num_LRread=sys.argv[4]
+num_LRread=int(sys.argv[4])
 max_qualscore=60
-#conf_threshold=0.005
-conf_threshold=1.2
+conf_threshold=float(sys.argv[7])
 
 
 # create a dict from reference PB fasta file,
 # where key=header and val=read
 dict_ref={}
-#ref_file='/afs/crc.nd.edu/group/NDBL/data/PB_ErrorCorrection/Fun_10files/File_4/4.fa'
 fref=open(ref_file,'r')
 
 c=0
-while(c<=int(num_LRread)):
+while(c<=num_LRread):
 	# Check for header
 	l1=fref.readline()
 	l2=fref.readline()
@@ -54,7 +52,6 @@ list_ref=[]
 list_pos=[]
 
 # Create a dict where key=header and val=startpos_endpos of that header in pileup file
-#dict_pilepos={}
 dict_pilepos=defaultdict(list)
 
 # create a dict where key=header and val=end_pos 
@@ -63,7 +60,6 @@ d_ref={}
 #Use Subset_sortedpos.sam (output file of 'Create_SubsetSAM.sh') to get number of matches
 #Create a dict where key=ref_header and val=list containing no. of matches based on the field 'MD:Z'
 #Parse MD:Z field to fetch only digit
-#f_subsetSAM='/afs/crc.nd.edu/group/NDBL/ochoudhu/PB_ErrorCorrection/Data_New/Ecoli_Simulated/bwa_mem_def/Correction/Subset_sortedpos.sam'
 f_subsetSAM='Out.sam'
 list_subsetSAM=open(f_subsetSAM).readlines()
 
@@ -88,10 +84,8 @@ for line_SAM in list_subsetSAM:
 			# To alter MAPQ=0 to MAPQ=1
 			MAPQ_SAM=int(col_SAM[4])+1
 
-			#-----------------------------------
-			#Added for version 5 - Normalize quality weight
+			# Normalized decision weight
 			MAPQ_SAM=MAPQ_SAM/float(max_qualscore)
-			#-----------------------------------
 
 			# MD:Z flag does not have a fixed column (not always the last column)
 			for field in col_SAM:
@@ -102,7 +96,7 @@ for line_SAM in list_subsetSAM:
 					l_match=re.findall(r'[\d]+',MDZ_val)
 					for i_match in l_match:
 						num_match=num_match+int(i_match)
-			# Normalize the number of matches
+			# Normalize number of matches
 			matchnorm=num_match/float(SR_readlength)
 			d_SR_matchnorm[ref_SAM].append(matchnorm)
 
@@ -164,9 +158,6 @@ l_checkpos=[]
 corr_seq=''
 for line in l_pileup:
 
-	#break
-	#print line.rstrip('\n')
-
 	# create a dict where key=allele and val=list of its sum of normalized weights across all SRs
 	d_allele_listweight=defaultdict(list)
 
@@ -175,7 +166,6 @@ for line in l_pileup:
 	# create dict, where key=SR# and val=edit dist
 	d_editweight={}
 
-	#corr_seq=''
 	# For each line, create a list to store MAPQ value of each read
 	l_MAPQ=[]
 
@@ -205,8 +195,6 @@ for line in l_pileup:
 		MAPQ=(ord(qual)-33)+1
 		l_MAPQ.append(MAPQ)
 	Sum_MAPQ=sum(l_MAPQ)
-	#-----------------------------------------------------
-	# Updated in version 4
 
 	# Check if new ref 
 	if ref not in dict_pilepos.keys():
@@ -361,9 +349,6 @@ for line in l_pileup:
 			list_Seqbase=list_seqbase[:int(cov)]
 			corr_base=ref_base
 			
-
-		#---------------------------------------------------------
-		# Start - OC
 		else:
 			# For Quick correction, check frequency
 			for allele in list_seqbase:
@@ -389,13 +374,6 @@ for line in l_pileup:
 				max_base=d_allelefreq_normsort[0]
 				
 			else:
-
-		# End - OC
-		#---------------------------------------------------------
-
-				#----------------------------------------------------------------
-				#----------------------------------------------------------------
-				# Start - OC
 				#For an erroneous position in a given read, find the index of SRs that align at that position
 				# Create lists to store the start and end positions of the SRs
 				l_SR_startpos=[]
@@ -416,7 +394,6 @@ for line in l_pileup:
 						l_SR_endpos=d_SR_endpos[ref_header]
 						
 						if (len(l_SR_startpos)!=len(l_SR_endpos)):
-							#print 'Not equal'
 							diff_pos=abs(len(l_SR_endpos[i_SR:])-len(l_SR_startpos[i_SR:]))
 							if (len(l_SR_startpos[i_SR:])<len(l_SR_endpos[i_SR:])):
 								if(l_SR_endpos[i_SR]<l_SR_startpos[i_SR]):
@@ -424,34 +401,18 @@ for line in l_pileup:
 							else:
 								l_SR_startpos=l_SR_startpos[i_SR+diff_pos]
 
-						#print len(l_SR_startpos)
-						#print len(l_SR_endpos)
-
 						for i_SR in range(min(len(l_SR_startpos),len(l_SR_endpos))):
-							#print i_SR
 							# Check if pos lies within the start and end range of a SR (SR_i)
 							if (int(l_SR_startpos[i_SR])<=int(pos) and int(pos)<=int(l_SR_endpos[i_SR])):
 								l_SR_index.append(i_SR)
 								sumweight=d_SR_matchnorm[ref_header][i_SR]+d_SR_qual[ref_header][i_SR]
 								l_SR_sumweight.append(sumweight)
 
-				#------------------------------------------------------------------------------------
-				# Updated in version 6: Don't pick the allele for the SR that has highest sum of normalized weights.
-				# Instead check if it is a high-confidence correction
-
 				# For an invalid set
 				if (len(l_SR_sumweight)<1):
-					#nline='Uneven set\n'+line+'\n'
-					#f_pileupiter.write(nline)
 					max_base=ref_base
-				#if (len(l_SR_sumweight)>0):
+
 				else:
-				#----------------------------------------------------------------
-				# Added in version 6 - check for low-confidence corrections, keep as it is
-
-					#print list_seqbase
-					#print l_SR_sumweight
-
 					# create a dict where key=allele and val=list of its sum of normalized weights across all SRs containing that allele
 					for i_al in range(len(list_seqbase)):
 						d_allele_listweight[list_seqbase[i_al]].append(l_SR_sumweight[i_al])
@@ -481,19 +442,12 @@ for line in l_pileup:
 						med_sechighest=sorted_d_allele_median[1][1]
 
 						# Check if low-confidence correction
-						#if ((int(med_highest)-int(med_sechighest))<conf_threshold):
 						if (int(med_highest)<conf_threshold):
 							nline=line+'\n'
 							f_pileupiter.write(nline)
 							max_base=ref_base
 						else:
 							max_base=al_highest
-				#print l_SR_sumweight
-				#print list_seqbase
-				#print d_allele_listweight
-				#print d_allele_median
-				#print sorted_d_allele_median
-				#----------------------------------------------------------------
 
 				# Check for start
 				if ('^' in max_base):
@@ -530,31 +484,21 @@ for line in l_pileup:
 					corr_base=max_base
 
 				else:
-					#nline='Exception 3\n'+line+'\n'
-					#f_pileupiter.write(nline)
 					corr_base=ref_base
-					#print 'Exception 3: '+line
+					
 
-
-	#print corr_base
 	corr_seq=corr_seq+corr_base
 
 
 #********************************************************************************
 # Print corrected reads
 
-# For each ref, keep seq before pos_start of pileup and after pos_end of pileup
-# dict_ref may have some headers not found in ppileup file
-#for trunc_ref in dict_header.keys():
-# Change in v3 -> print all reads for testing with BLASR
-
 for ref in sorted(dict_ref.keys()):
 
 	trunc_ref=ref[1:]
 	if (len(trunc_ref)>2):
 		if trunc_ref in dict_header.keys():
-	#-----------------------------------------
-	# Updated in version 4
+
 			# Leftmost start pos
 			leftmost_start=int(dict_pilepos[trunc_ref][1].split('_')[0])
 			# Rightmost end position
@@ -577,11 +521,8 @@ for ref in sorted(dict_ref.keys()):
 
 			seqcorr_mid=seqcorr_mid+dict_header[trunc_ref][-1]
 			seqcorr=seqcorr_beg+seqcorr_mid+seqcorr_end
-			#---------------------------------------
-			# Added in version 5 - Remove nonATGCN character
 			seqcorr=re.sub(r'\+[\d]+','',seqcorr)
-			#---------------------------------------
 
 			print ref
 			print seqcorr
-	#-----------------------------------------
+
