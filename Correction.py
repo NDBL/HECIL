@@ -1,8 +1,6 @@
-
 ########################################################
 #Author: Olivia Choudhury
-#Last modified: 06/09/2017
-#version 6.8
+#version 9
 ########################################################
 
 import os, fileinput, re, sys
@@ -12,6 +10,51 @@ import numpy,operator
 def median(lst):
     return numpy.median(numpy.array(lst))
 
+def percentile(lst,val):
+    return numpy.percentile(numpy.array(lst),val)
+
+def getCorrectedBase(max_base):
+	# Check for start
+	if ('^' in max_base):
+		if (('.' in max_base) or (',' in max_base)):
+			return("ref_base")
+
+	# if match
+	elif (max_base=='.' or max_base==','):
+		return("ref_base")
+
+	# check for deletion in next line
+	elif ('-' in max_base):
+		return("ref_base")
+
+	#Check for deletion
+	elif(max_base=='*'):
+		return("none")
+
+	# check for insertion
+	elif ('+' in max_base):
+		ins_base=re.findall(r'[ATGCNatgcn]+',max_base)
+		temp_ins=''
+		for ins in ins_base:
+			temp_ins=temp_ins+ins
+
+		if (ref_base=='N' or ref_base=='n'):
+			Ins_return="Ins"+"_"+temp_ins
+			return(Ins_return)
+
+		else:
+			RefIn_return="RefIn"+"_"+ref_base+temp_ins
+			return(RefIn_return)
+
+	# check for mismatch
+	elif(re.findall(r'[ACGTNacgtn]',max_base)):
+		return ("max_base")
+
+	else:
+		return("ref_base")
+
+
+	
 # For iterative correction, create a new pileup file to store the lines with low-confidence correction
 pileupiter=sys.argv[3]
 f_pileupiter=open(pileupiter,'w')
@@ -25,16 +68,17 @@ cutoff_quickcorrect=float(sys.argv[6])
 SR_readlength=sys.argv[5]
 num_LRread=int(sys.argv[4])
 max_qualscore=60
-conf_threshold=float(sys.argv[7])
+percentile_highconf=float(sys.argv[7])
+dict_weight_base={}
+list_med_highest=[]
 
-
-# create a dict from reference PB fasta file,
-# where key=header and val=read
+# create a dict from reference PB fasta file, where key=header and val=read
 dict_ref={}
 fref=open(ref_file,'r')
 
 c=0
 while(c<=num_LRread):
+
 	# Check for header
 	l1=fref.readline()
 	l2=fref.readline()
@@ -45,7 +89,6 @@ while(c<=num_LRread):
 	c+=1
 
 # Create a list to append the header names
-# easier to access by index
 list_ref=[]
 
 # Create a list to store pos so that the end pos of previous reference can be stored
@@ -57,7 +100,6 @@ dict_pilepos=defaultdict(list)
 # create a dict where key=header and val=end_pos 
 d_ref={}
 
-#Use Subset_sortedpos.sam (output file of 'Create_SubsetSAM.sh') to get number of matches
 #Create a dict where key=ref_header and val=list containing no. of matches based on the field 'MD:Z'
 #Parse MD:Z field to fetch only digit
 f_subsetSAM='Out.sam'
@@ -70,38 +112,37 @@ d_SR_qual=defaultdict(list)
 
 for line_SAM in list_subsetSAM:
 
-	# Ignore header lines
-	if (line_SAM[0]!="@"):
+	SAM_RNAME=line_SAM.split()[2]
+	# Ignore header lines and lines with empty ref
+	if (line_SAM[0]!="@" and SAM_RNAME!="*"):
 
 		line_SAM=line_SAM.rstrip('\n')
 		col_SAM=line_SAM.split()
 
 		ref_SAM=col_SAM[2]
+		# Change MAPQ=0 to MAPQ=1
+		MAPQ_SAM=int(col_SAM[4])+1
 
-		#Ignore lines that have '*' in Ref field 
-		if (ref_SAM!='*'):
+		#Normalized weight
+		MAPQ_SAM=MAPQ_SAM/float(max_qualscore)
 
-			# To alter MAPQ=0 to MAPQ=1
-			MAPQ_SAM=int(col_SAM[4])+1
+		# MD:Z flag does not have a fixed column (not always the last column)
+		for field in col_SAM:
+			if ('MD:Z' in field):
+				MDZ_val=field.split('MD:Z:')[1]
+				num_match=0
+				# Parse to get only digits
+				l_match=re.findall(r'[\d]+',MDZ_val)
+				for i_match in l_match:
+					num_match=num_match+int(i_match)
+	
+		# Normalize the number of matches
+		matchnorm=num_match/float(SR_readlength)
+		d_SR_matchnorm[ref_SAM].append(matchnorm)
 
-			# Normalized decision weight
-			MAPQ_SAM=MAPQ_SAM/float(max_qualscore)
+		# Store MAPQ value of each aligned SR
+		d_SR_qual[ref_SAM].append(MAPQ_SAM)
 
-			# MD:Z flag does not have a fixed column (not always the last column)
-			for field in col_SAM:
-				if ('MD:Z' in field):
-					MDZ_val=field.split('MD:Z:')[1]
-					num_match=0
-					# Parse to get only digits
-					l_match=re.findall(r'[\d]+',MDZ_val)
-					for i_match in l_match:
-						num_match=num_match+int(i_match)
-			# Normalize number of matches
-			matchnorm=num_match/float(SR_readlength)
-			d_SR_matchnorm[ref_SAM].append(matchnorm)
-
-			# Store MAPQ value of each aligned SR
-			d_SR_qual[ref_SAM].append(MAPQ_SAM)
 
 
 #create dict where key=ref_header and val=list containing position on ref where each SR begins alignment
@@ -110,7 +151,7 @@ d_SR_startpos=defaultdict(list)
 # create dict where key=ref_header and val=list containing position on ref where each SR ends alignment
 d_SR_endpos=defaultdict(list)
 
-# Create data structures to save information about the SRs aligning to each ref_header
+#  Save information about the SRs aligning to each ref_header
 for line_p in l_pileup:
 
 	line_p=line_p.rstrip('\n')
@@ -127,7 +168,6 @@ for line_p in l_pileup:
 	#Check if seq_p has beginning of SR alignment ('^')
 	#if seq_p has contiguous start and end, i.e. "^$", consider it as only start, not both start and end
 	if ('^$' in seq_p):
-		#num_start=num_start-seq_p.count('^$')
 		num_end=num_end-seq_p.count('^$')
 
 	if ('^' in seq_p):
@@ -147,8 +187,6 @@ for line_p in l_pileup:
 			d_SR_endpos[ref_p].append(pos_p)
 
 
-
-countl=0
 # create a dict where key=header and val=corrected ref seq for the position range in the Pileup file
 dict_header=defaultdict(list)
 
@@ -169,10 +207,8 @@ for line in l_pileup:
 	# For each line, create a list to store MAPQ value of each read
 	l_MAPQ=[]
 
-	#-------------------------------------------------------------
 	# create a dict where key=allele/correction and val=its frequency
 	d_allele_freq={}
-	#-------------------------------------------------------------
 
 	# create a dictionary to store possible corrections/seq_base
 	d_seqbase={}
@@ -209,7 +245,7 @@ for line in l_pileup:
 
 	# ref already exists
 	else:
-		# Check if ref exists but contiguous positiobn (difference between current and last position==1)
+		# Check if ref exists but contiguous position (difference between current and last position==1)
 		if (((int(pos)-int(l_checkpos[-1]))==1) or (dict_pilepos[ref][-1]=='')):
 			end=l_checkpos[-1]
 			align_range=start+'_'+end
@@ -253,7 +289,6 @@ for line in l_pileup:
 
 			else:
 				corr_base=ref_base	# for exceptions like '^)T'
-				print 'Exception 1: '+line
 
 		# Cov=1 but insert, delete, start, or stop
 		else:
@@ -294,7 +329,6 @@ for line in l_pileup:
 
 			else:
 				corr_base=ref_base
-				print 'Exception 2: '+line
 			
 	# Case of majority vote
 	else:
@@ -313,7 +347,6 @@ for line in l_pileup:
 		if (len(list_numins)>0):
 			# Remove '+'
 			for numins in list_numins:
-				#num1=int(numins[2:])
 				num1=int(numins[1:])
 				list_newnumins.append(num1)
 
@@ -323,11 +356,9 @@ for line in l_pileup:
 		
 
 		list_numdel=re.findall(r'[ACGTN]\-\d+|[acgtn]\-\d+|\-\d+',seq_base)
-		#print list_numdel
 		if (len(list_numdel)>0):
 			# Remove '-'
 			for numdel in list_numdel:
-				#num2=int(numdel[2:])
 				num2=int(numdel[1:])
 				list_newnumdel.append(num2)
 
@@ -345,14 +376,12 @@ for line in l_pileup:
 
 		# Check if length of seq_base==cov. Allow +/-1
 		if (len(list_seqbase)>int(cov)):
-			#print 'Error: '+line
 			list_Seqbase=list_seqbase[:int(cov)]
 			corr_base=ref_base
 			
 		else:
 			# For Quick correction, check frequency
 			for allele in list_seqbase:
-				#if (allele not in d_allele_freq):
 				if (allele not in d_allele_freq.keys()):
 					d_allele_freq[allele]=1
 				else:
@@ -364,14 +393,25 @@ for line in l_pileup:
 				if al not in d_allelefreq_norm.keys():
 					d_allelefreq_norm[al]=d_allele_freq[al]/float(len(list_seqbase))
 
-			#print d_allelefreq_norm
 			d_allelefreq_normsort=list(sorted(d_allelefreq_norm, key=d_allelefreq_norm.__getitem__, reverse=True))
 			normfreq=d_allelefreq_norm[d_allelefreq_normsort[0]]
 
-			# Check if allele with highest freq has freq > 0.9
+			# Check if allele with highest freq has freq > cutoff_quickcorrect
 			if (normfreq>cutoff_quickcorrect):
-				#print 'Consensus'
 				max_base=d_allelefreq_normsort[0]
+				
+				correction=getCorrectedBase(max_base)
+				if (correction=="none"):
+					corr_base=""
+				elif (correction=="ref_base"):
+					corr_base=ref_base
+				elif (correction=="max_base"):	
+					corr_base=max_base
+				elif ("Ins" in correction):
+					corr_base=correction.split('_')[1]
+				elif ("RefIn" in correction):
+					corr_base=correction.split('_')[1]
+					
 				
 			else:
 				#For an erroneous position in a given read, find the index of SRs that align at that position
@@ -411,6 +451,20 @@ for line in l_pileup:
 				# For an invalid set
 				if (len(l_SR_sumweight)<1):
 					max_base=ref_base
+					
+					correction=getCorrectedBase(max_base)	
+					if (correction=="none"):
+						corr_base=""
+					elif (correction=="ref_base"):
+						corr_base=ref_base
+					elif (correction=="max_base"):	
+						corr_base=max_base
+					elif ("Ins" in correction):
+						corr_base=correction.split('_')[1]
+					elif ("RefIn" in correction):
+						corr_base=correction.split('_')[1]
+
+					
 
 				else:
 					# create a dict where key=allele and val=list of its sum of normalized weights across all SRs containing that allele
@@ -435,60 +489,80 @@ for line in l_pileup:
 					# No conflicts for these configurations
 					if ((al_highest==',' and al_sechighest=='.') or (al_highest=='.' and al_sechighest==',')):
 						max_base=al_highest
+						
+						correction=getCorrectedBase(max_base)	
+						if (correction=="none"):
+							corr_base=""
+						elif (correction=="ref_base"):
+							corr_base=ref_base
+						elif (correction=="max_base"):	
+							corr_base=max_base
+						elif ("Ins" in correction):
+							corr_base=correction.split('_')[1]
+						elif ("RefIn" in correction):
+							corr_base=correction.split('_')[1]
 
+		
 					else:
-
 						med_highest=sorted_d_allele_median[0][1]
-						med_sechighest=sorted_d_allele_median[1][1]
 
-						# Check if low-confidence correction
-						if (int(med_highest)<conf_threshold):
-							nline=line+'\n'
-							f_pileupiter.write(nline)
-							max_base=ref_base
-						else:
-							max_base=al_highest
+						#Store med_highest
+						list_med_highest.append(med_highest)
 
-				# Check for start
-				if ('^' in max_base):
-					if (('.' in max_base) or (',' in max_base)):
-						corr_base=ref_base
-
-				# if match
-				elif (max_base=='.' or max_base==','):
-					corr_base=ref_base
-
-				# check for deletion in next line
-				elif ('-' in max_base):
-					corr_base=ref_base
-
-				#Check for real deletion
-				elif(max_base=='*'):
-					corr_base=''
-
-				# check for insertion
-				elif ('+' in max_base):
-					ins_base=re.findall(r'[ATGCNatgcn]+',max_base)
-					temp_ins=''
-					for ins in ins_base:
-						temp_ins=temp_ins+ins
-
-					if (ref_base=='N' or ref_base=='n'):
-						corr_base=temp_ins
-
-					else:
-						corr_base=ref_base+temp_ins
-
-				# check for mismatch
-				elif(re.findall(r'[ACGTNacgtn]',max_base)):
-					corr_base=max_base
-
-				else:
-					corr_base=ref_base
-					
+						# Store med_highest and max_base
+						# Store dict value as weight_base
+						dict_weight_base_val=str(med_highest)+'_'+al_highest
+						dict_weight_base[line]=dict_weight_base_val
 
 	corr_seq=corr_seq+corr_base
+	# Store corrected seq in dict_header
+	dict_header[ref].append(corr_seq)
 
+# Calculate confidence threshold based on given percentile and distribution of weights
+threshold_confidence=percentile(list_med_highest,percentile_highconf)
+
+# Reduce memory usage
+list_subsetSAM=[]
+l_pileup=[]
+
+# After calculating threshold for high-confidence correction, correct the errors stored in dict_weight_base 
+for line_err in dict_weight_base.keys():
+
+	ref=line_err.split()[0]
+
+	val=dict_weight_base[line_err]
+	weight=val.split('_')[0]
+	al_highest=val.split('_')[1]
+	
+	if (float(weight)<threshold_confidence):
+		nline=line_err+'\n'
+		f_pileupiter.write(nline)	
+		
+		if (ref_base!='N'):
+			max_base=ref_base
+	
+		else:
+			max_base=al_highest
+	else:
+		max_base=al_highest
+		
+	correction=getCorrectedBase(max_base)	
+	if (correction=="none"):
+		corr_base=""
+	elif (correction=="ref_base"):
+		corr_base=ref_base
+	elif (correction=="max_base"):	
+		corr_base=max_base
+	elif ("Ins" in correction):
+		corr_base=correction.split('_')[1]
+	elif ("RefIn" in correction):
+		corr_base=correction.split('_')[1]
+
+
+	corr_seq=corr_seq+corr_base
+	dict_header[ref].append(corr_seq)
+
+	
 
 #********************************************************************************
 # Print corrected reads
