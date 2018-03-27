@@ -17,5 +17,14 @@ Example command: python HECIL.py -l LongRead.fa -s ShortRead.fq -len 202 -o Out
 The output containing all (corrected and uncorrected) long reads will be saved in Corrected_LongRead.fa
 
 
+Troubleshooting:
 
-Contact: ochoudhu@nd.edu or semrich@nd.edu
+1. If Align_Corr.sh, bwa, and samtools cannot execute after cloning the repository, run the following commands:
+    chmod +x bwa
+    chmod +x samtools
+    chmod +x Align_Corr.sh
+
+
+
+
+Contact: olivia.choudhury1@ibm.com
