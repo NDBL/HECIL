@@ -11,7 +11,7 @@ num_LRread=int(sys.argv[2])
 corrref_file=sys.argv[3]
 num_corrLRread=int(sys.argv[4])
 
-out='Corrected_'+ref_file
+out=ref_file+".corrected"
 fout=open(out,'w')
 fref=open(ref_file,'r')
 
