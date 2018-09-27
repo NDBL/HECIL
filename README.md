@@ -14,7 +14,7 @@ usage: python HECIL.py [-h] -l LR -s SR -len LENGTH_SR -o OUTPUT [-lc LOW_CONFID
                 
 Example command: python HECIL.py -l LongRead.fa -s ShortRead.fq -len 202 -o Out
 
-The output containing all (corrected and uncorrected) long reads will be saved in Corrected_LongRead.fa
+The output containing all (corrected and uncorrected) long reads will be saved in LongRead_Corrected.fasta
 
 
 Troubleshooting:
