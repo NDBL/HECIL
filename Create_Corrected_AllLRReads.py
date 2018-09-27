@@ -2,44 +2,55 @@
 #This program adds the uncorrected LR reads (not in Pileup file)
 #to the output file of HECIL
 
-import fileinput, os, sys
+import fileinput, os, sys, re
 
-#USAGE: python Create_Corrected_AllLRReads.py Orig_LR.fa Num_OrigLR Corrected_LR.fa Num_CorrLR
+#USAGE: python Create_Corrected_AllLRReads.py Orig_LR.fa Num_OrigLR LR_Corrected.fa Num_CorrLR
 
 ref_file=sys.argv[1]
 num_LRread=int(sys.argv[2])
 corrref_file=sys.argv[3]
 num_corrLRread=int(sys.argv[4])
 
-out='Corrected_'+ref_file
-fout=open(out,'w')
-fref=open(ref_file,'r')
+#Split filename and extension
+col=re.split('.fa|.fasta ',ref_file)
+out=col[0]+'_Corrected.fasta'
 
-dict_ref={}
+fout=open(out,'w')
 
 # Store all pre-corrected reads
-for c in range(int(num_LRread)):
-	# Check for header
-	l1=fref.readline()
-	l2=fref.readline()
-	l1=l1.rstrip('\n')
-	l2=l2.rstrip('\n')
+dict_ref={}
+header=''
+read=''
+for line in fileinput.input(ref_file):
+	if (line[0]=='>'):
+		dict_ref[header]=read
+		header=line.rstrip('\n')
+		read=''
 
-	dict_ref[l1]=l2
+	else:
+		read=read+line.rstrip('\n')
 
+#For the last read
+dict_ref[header]=read
 
-fcorrref=open(corrref_file,'r')
 
 dict_corrref={}
+header=''
+read=''
 
-# Store all corrected reads (subset of original list)
-for c1 in range(int(num_corrLRread)):
-	lc1=fcorrref.readline()
-	lc2=fcorrref.readline()
-	lc1=lc1.rstrip('\n')
-	lc2=lc2.rstrip('\n')
+for line in fileinput.input(corrref_file):
+        if (line[0]=='>'):
+                dict_corrref[header]=read
+                header=line.rstrip('\n')
+                read=''
 
-	dict_corrref[lc1]=lc2
+        else:
+                read=read+line.rstrip('\n')
+
+#For the last read
+dict_corrref[header]=read
+
+
 
 for ref in dict_ref.keys():
 	if (len(ref)>2):
